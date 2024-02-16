@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width", initial-scale="1.0" />
+        <meta http-equiv="X-UA-Compatible" content="ie-edge" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+        integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
+        <title>Garden Locator</title>
+        <script src="https://polyfill.io/v3/polyfill.min.js?features=default"></script>
+        <style>
+            body { margin:0; padding:0; }
+
+            /* Set the size of the div element that contains the map */
+            #map {
+                height: 600px; /* The height is 400 pixels */
+                width: 100%; /* The width is the width of the web page */
+                border-radius: 5px;
+            }
+
+            .filter-ui {
+                background:#fff;
+                position:absolute;
+                top:10px;
+                right:10px;
+                z-index:100;
+                padding:10px 20px;
+                border-radius: 2px;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Garden Locator in Springfield</h1>
+        <a href="add.html" class="btn btn-success mb-4">Add Garden</a>
+        <nav id='filters' class='filter-ui'>Filter</nav>
+        <div id="map"></div>
+        <script>
+            function initMap() {
+                var status = null;
+                var features = [];
+                const icon = {
+                    url: "./gardening.png", // url
+                    scaledSize: new google.maps.Size(25, 25), // scaled size
+                    origin: new google.maps.Point(0,0), // origin
+                    anchor: new google.maps.Point(0, 0) // anchor
+                };
+                // Map options
+                var options = {
+                    zoom: 10,
+                    center: {lat: 45.4215, lng: -75.6972}
+                }
+                var infoWindow = new google.maps.InfoWindow();
+
+                // New Map
+                var map = new
+                google.maps.Map(document.getElementById('map'), options);
+                //GeoJson
+                map.data.loadGeoJson('./data.json', null, function(features) {
+                    features = features;
+                    map.data.addListener('click', function(event) {
+                        var myHTML = "<strong>Garden Name: </strong>" + event.feature.getProperty("GARDEN") + ", " + 
+                                     "<strong>Address: </strong>" + event.feature.getProperty("LEGAL_ADDR") + ", " +
+                                     "<strong>Status: </strong>" + event.feature.getProperty("STATUS");
+                                     infoWindow.setContent("<div style='maxWidth:300px, text-align: center;'>" + myHTML + "</div>");
+                        infoWindow.setPosition(event.feature.getGeometry().get());
+                        infoWindow.setOptions({pixelOffset: new google.maps.Size(0,-30)});
+                        infoWindow.open(map);
+                    });
+
+                    // Find and store a variable reference to the list of filters.
+                    var filters = document.getElementById('filters');
+
+                    // Wait until the marker layer is loaded in order to build a list of possible
+                    // types.
+                    var makeCheckboxes = function() {
+                        var typesObj = {}, types = [];
+                        
+                        features.forEach(function (feature) {
+                            typesObj[feature.getProperty('STATUS')] = true;
+                        })
+                        for (var k in typesObj) types.push(k);
+
+                        
+                        
+                        var checkboxes = [];
+                        // Create a filter interface.
+                        for (var i = 0; i < types.length; i++) {
+                            // Create an an input checkbox and label inside.
+                            var item = filters.appendChild(document.createElement('div'));
+                            var checkbox = item.appendChild(document.createElement('input'));
+                            var label = item.appendChild(document.createElement('label'));
+                            checkbox.type = 'checkbox';
+                            checkbox.id = types[i];
+                            checkbox.checked = true;
+                            // create a label to the right of the checkbox with explanatory text
+                            label.innerHTML = types[i];
+                            label.setAttribute('for', types[i]);
+                            // Whenever a person clicks on this checkbox, call the update().
+                            checkbox.addEventListener('change', update);
+                            checkboxes.push(checkbox);
+                        }
+
+                        // This function is called whenever someone clicks on a checkbox and changes
+                        // the selection of markers to be displayed.
+                        function update() {
+                            var enabled = {};
+                            // Run through each checkbox and record whether it is checked. If it is,
+                            // add it to the object of types to display, otherwise do not.
+                            for (var i = 0; i < checkboxes.length; i++) {
+                            if (checkboxes[i].checked) {
+                                enabled[checkboxes[i].id] = true;
+                            }
+                            }
+                            features.forEach(function(feature) {
+                                // 2 in { 2: true } // true
+                                // 2 in { } // false
+                                
+                                if (feature.getProperty('STATUS') in enabled) {
+                                    map.data.add(feature);
+                                    return (feature.getProperty('STATUS') in enabled);
+                                } else {
+                                    map.data.remove(feature);
+                                }
+                            });
+                        }
+                    };
+                    makeCheckboxes();
+                });
+
+                map.data.setStyle(function(feature) {
+                    if (feature.getProperty('ICON')) {
+                        icon = feature.getProperty('ICON');
+                    }
+                    return ({
+                        icon: icon
+                    });
+                });
+
+            }
+
+            //Fetch gardens from database using API
+            async function getGardens() {
+                const res = await fetch('/api/v1/gardens');
+                const data = res.json();
+
+                console.log('Gardens stored in dB', data);
+                const gardens = data.data.map(garden => {
+                    return {
+                        type: 'Feature',
+                        geometry: {
+                            type: 'Point',
+                            coordinates: [garden.location.coordinates[0], garden.location.coordinates[1]]
+                        },
+                        properties: {
+                            gardenId: garden.gardenId,
+                            icon: 'tree'
+                        }
+                    }
+                });
+            }
+
+            getGardens();
+            
+        </script>
+        <script
+            src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDqZCYISbN1A0MOUwmegKCeRzqmrLvvNlc&callback=initMap&v=beta"
+            defer>
+        </script>
+    </body>
+</html>
